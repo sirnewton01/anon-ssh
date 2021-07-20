@@ -8,8 +8,8 @@ The gemini command invokes a Gemini transaction with either on either a Gemini
 SSH URL or a local file path. In the case of the SSH URL it will initiate
 the connection over SSH and invoke the transaction on the remote host using
 this command, but with a file path. Also, in the latter case the gemini command
-will set up any extra SSH configuration for the remote host, such as a
-public key if none exists already.
+will set up any extra SSH configuration for the remote host to set up anonymous
+SSH access, such as a public key if none exists.
 
 ```
 gemini gemssh://[username@]somehost/some/path
@@ -17,7 +17,16 @@ gemini gemssh://[username@]somehost/some/path
 
 Note that if no username is provided then it will be assumed that it is
 anonymous, following the Anonymous SSH framework. It will run the gemini command
-on the remote system and execute as described in the next section.
+on the remote system substituting the URL for just the remote file path. This
+command is analogous to the request portion of the Gemini Protocol with some
+notable differences. The full URL is not provided here and there is no CRLF
+terminator. Note that the path is expected to be UTF-8 encoded. Virtual hosting
+is handled via a special HOST environment variable by the SSH server
+implementation.
+
+```
+gemini /some/path
+```
 
 When the command is invoked on a local file path it will return a well-formed
 Gemini protocol response. If the local file path exists and can be read by the
