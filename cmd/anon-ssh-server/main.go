@@ -3,18 +3,18 @@ package main
 import (
 	"fmt"
 	"github.com/gliderlabs/ssh"
+	xcssh "golang.org/x/crypto/ssh"
 	"io"
 	"log"
 	"os/exec"
 	"time"
-	xcssh "golang.org/x/crypto/ssh"
 )
 
 func main() {
 	// ssh-keygen -m PEM -f hostkey.pem
-	server := &ssh.Server {
-		Addr: ":1966",
-		IdleTimeout: 1*time.Second,
+	server := &ssh.Server{
+		Addr:        ":1966",
+		IdleTimeout: 1 * time.Second,
 	}
 
 	server.Handle(func(s ssh.Session) {
@@ -23,7 +23,7 @@ func main() {
 		if len(s.Command()) == 0 {
 			io.WriteString(s, fmt.Sprintf("Welcome %s\n", s.User()))
 			io.WriteString(s, fmt.Sprintf("Your public key is %s\n", pubkey))
-			io.WriteString(s, fmt.Sprintf("Your environment: %v\n", s.Environ())) 
+			io.WriteString(s, fmt.Sprintf("Your environment: %v\n", s.Environ()))
 			io.WriteString(s, fmt.Sprintf("%+v\n", s))
 			s.Exit(0)
 			return
@@ -68,11 +68,11 @@ func main() {
 
 		s.Exit(cmd.ProcessState.ExitCode())
 	})
-	server.SetOption(ssh.PublicKeyAuth(func (ctx ssh.Context, key ssh.PublicKey) bool {
+	server.SetOption(ssh.PublicKeyAuth(func(ctx ssh.Context, key ssh.PublicKey) bool {
 		// All public keys are allowed
 		return true
 	}))
-	server.SetOption(ssh.PasswordAuth(func (ctx ssh.Context, pass string) bool {
+	server.SetOption(ssh.PasswordAuth(func(ctx ssh.Context, pass string) bool {
 		// Passwords are never correct
 		return false
 	}))
