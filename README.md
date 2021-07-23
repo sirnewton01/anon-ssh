@@ -70,12 +70,12 @@ above can be made for all hosts when connecting as the anonymous user like this.
 .ssh/config:
 
 Match user anonymous
-  SetEnv TZ=America/New_York
   IdentitiesOnly yes
   PubkeyAuthentication yes
   PasswordAuthentication no
   PreferredAuthentications publickey
   Port 1966
+  Include ~/.ssh/*_anon_config
 ```
 
 In most configurations this would be all that's needed to access a host name
@@ -102,42 +102,28 @@ Your public key has been saved in id_rsa.pub.
 ```
 
 If you want to use the same identity for all of your SSH hosts then this is
-probably sufficient. However, if you want a separate identity for each site
+nearly sufficient. However, if you want a separate identity for each site
 then you can configure OpenSSH to do that too. This is a strength of SSH as
 a protocol since it permits different kinds of identity management depending
 on your needs. OpenSSH is so popular that a wide variety of SSH clients and
 tools will work with its configuration files.
 
-Let's create a new file in the .ssh directory called anon_hosts_config where
-we put all of the special per-host entries and include that from the .ssh/config
-This helps to keep things a bit better organized and gives us a file that we can
-easily append to add more hosts in the future without interfering with the top
-level configuration file. Eventually, it could be done automatically with
-scripts or special tools. We include it into our ssh configuration by adding
-a line like this, probably at the end.
+There is a special include at the end of the ssh configuration above that
+will allow separate files with per-host configurations in them. These are
+split out into separate files to make it easier to add/remove per-host
+configurations because the file names are prefixed with the particular host.
+Here is an entry for example.com
 
 ```
-.ssh/config:
+.ssh/example.com_anon_config:
 
-# Somewhere at the bottom of the config file
-# Include the anon_hosts_config with the per-host configuration for anonymous
-# access.
-Include ~/.ssh/anon_hosts_config
-```
-
-Now, when we want to generate a new identity key for a host we append these
-lines to the bottom of our anon_hosts_config file to match newhost.com.
-
-```
-.ssh/anon_hosts_config:
-
-Match user anonymous host newhost.com
-  SetEnv HOST=newhost.com
-  IdentityFile ~/.ssh/newhost.com/id_rsa 
+Match user anonymous host example.com
+  SetEnv HOST=example.com
+  IdentityFile ~/.ssh/example.com_anon_id_rsa 
 ```
 
 You can see that a special environment variable HOST is set when connecting
-to newhost.com. This will allow SSH servers to support virtual hosting, which
+to example.com. This will allow SSH servers to support virtual hosting, which
 is a capability that other protocols have, such as http and is super useful for
 service providers to combine or separate services for administration purposes.
 SSH protocol doesn't send to the server the hostname that the client connected
@@ -151,13 +137,14 @@ that we can use with the key. RSA is very commonly used and most likely to work
 with an SSH server that is configured for anonymous access.
 
 ```
-ssh-keygen -b 2048 -t rsa -f ~/.ssh/newhost.com/id_rsa -q -N ""
+ssh-keygen -b 2048 -t rsa -f ~/.ssh/example.com_anon_id_rsa -q -N ""
 ```
 
-Now, when you conect to anonymous@newhost.com it will use this key for that
+Now, when you conect to anonymous@example.com it will use this key for that
 site and none of the others restricting your identity to only that one site.
 This can be useful to help and avoid certain user tracking mechanisms popular
-on the web.
+on the web. If you ever want to use a new identity with this site then you can
+delete the example.com_anon_id* files and regenerate them.
 
 You may have noticed that we forgot about the LANG and TZ environment variables
 described at the top of this section. It turns out that most Unix-based
@@ -182,13 +169,6 @@ there has been a breach in the trust of that site at any time. Most of these
 tools will relay that message reliably.
 
 ```
-The authenticity of host 'newhost.com (1.2.3.4)' can't be established.
-ECDSA key fingerprint is SHA256:.........................
-Are you sure you want to continue connecting (yes/no)? yes
-Warning: Permanently added 'newhost.com' (ECDSA) to the list of known hosts.
-
-...
-
 @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 @    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
 @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@

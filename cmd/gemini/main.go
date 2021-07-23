@@ -27,11 +27,7 @@ func assertAnonConfig(username string, hostname string) error {
 		return err
 	}
 
-	sshconfdir := filepath.Join(user.HomeDir, ".ssh", "anon-hosts_config")
-
-	if _, err := os.Stat(filepath.Join(sshconfdir, "anon_hosts_config")); os.IsNotExist(err) {
-		return fmt.Errorf("Anonymous access has not been configured in ~/.ssh/config Please set it up first before using this comand")
-	}
+	sshconfdir := filepath.Join(user.HomeDir, ".ssh")
 
 	// Maybe we should check that identitiesonly yes is present too to
 	// avoid problems with the ssh agent?
@@ -39,21 +35,23 @@ func assertAnonConfig(username string, hostname string) error {
 		!strings.Contains(conf, "passwordauthentication no") ||
 		!strings.Contains(conf, "port 1966") {
 
+		fmt.Fprintf(os.Stderr, `Add the following to your ~/.ssh/config to enable anonymous access:
+
+Match user anonymous
+  IdentitiesOnly yes
+  PubkeyAuthentication yes
+  PasswordAuthentication no
+  PreferredAuthentications publickey
+  Port 1966
+  Include ~/.ssh/*_anon_config
+`)
+
 		return fmt.Errorf("Anonymous access has not been configured in ~/.ssh/config Please set it up first before using this comand")
 	}
 
 	if !strings.Contains(conf, fmt.Sprintf("HOST=%s", hostname)) {
-		sshconfdir := filepath.Join(user.HomeDir, ".ssh")
+		keypath := filepath.Join(sshconfdir, fmt.Sprintf("%s_anon_id_rsa", hostname))
 
-		if _, err := os.Stat(filepath.Join(sshconfdir, hostname)); os.IsNotExist(err) {
-			err := os.Mkdir(filepath.Join(sshconfdir, hostname), os.ModeDir|0700)
-			if err != nil {
-				return err
-			}
-
-		}
-
-		keypath := filepath.Join(sshconfdir, hostname, "id_rsa")
 		if _, err := os.Stat(keypath); os.IsNotExist(err) {
 			cmd := exec.Command("ssh-keygen", "-m", "PEM", "-P", "", "-f", keypath)
 			err := cmd.Run()
@@ -62,7 +60,7 @@ func assertAnonConfig(username string, hostname string) error {
 			}
 		}
 
-		ahc, err := os.OpenFile(filepath.Join(sshconfdir, "anon_hosts_config"), os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+		ahc, err := os.OpenFile(filepath.Join(sshconfdir, fmt.Sprintf("%s_anon_config", hostname)), os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
 		if err != nil {
 			return err
 		}
@@ -71,8 +69,33 @@ func assertAnonConfig(username string, hostname string) error {
 		ahc.WriteString("\n")
 		ahc.WriteString(fmt.Sprintf("Match user anonymous host %s\n", hostname))
 		ahc.WriteString(fmt.Sprintf("  SetEnv HOST=%s\n", hostname))
-		ahc.WriteString(fmt.Sprintf("  IdentityFile %s\n", keypath))
+		ahc.WriteString(fmt.Sprintf("  IdentityFile ~/.ssh/%s_anon_id_rsa\n", hostname))
 		ahc.WriteString("\n")
+	}
+
+	// Check that there is a server key in the known hosts
+	checkkeycmd := exec.Command("ssh-keygen", "-F", fmt.Sprintf("[%s]:1966", hostname))
+	err = checkkeycmd.Run()
+	if err != nil && (checkkeycmd.ProcessState == nil || checkkeycmd.ProcessState.ExitCode() == -1) {
+		return err
+	}
+
+	// We don't yet have the host key for this host, so let's add it to the known hosts
+	if checkkeycmd.ProcessState.ExitCode() == 1 {
+		cmd := exec.Command("ssh-keyscan", "-p", "1966", hostname)
+		hk, err := cmd.Output()
+		if err != nil {
+			return err
+		}
+		hostkey := string(hk)
+
+                kh, err := os.OpenFile(filepath.Join(sshconfdir, "known_hosts"), os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+                if err != nil {
+                        return err
+                }
+                defer kh.Close()
+
+		kh.WriteString(hostkey)
 	}
 
 	return nil
