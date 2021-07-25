@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"github.com/alecthomas/kong"
 	"github.com/gliderlabs/ssh"
 	xcssh "golang.org/x/crypto/ssh"
 	"io"
@@ -15,6 +16,36 @@ import (
 	"time"
 )
 
+var CLI struct {
+	Port string `name:"port" default:"1966"`
+	IdleTimeout time.Duration `name:"idle-timeout" default:"10s"`
+	HostKey string `arg name:"hostkey" help:"Host PEM key to use for this server. If the file doesn't exist then one will be generated." type:"path" required:""`
+	CommandList string `arg name:"command-list" help:"Command list file is the list of commands that are permitted by anonymous clients. If the file doesn't exist a template will be generated." type:"path" required:""`
+	PathBindings string `arg name:"path-bindings" help:"Path binding file is the list of mappings of external paths to internal ones. If the file doesn't exist a template will be generated." type:"path" required:""`
+}
+
+const COMMAND_LIST_TEMPLATE = `# The following is a list of commands templates that will be permitted on this server
+# It is important to choose a minimal set since anyone with access to your
+# server can run these without any authentication using this server.
+#
+# Read-only commands:
+#cat <path>
+#gemini <path>
+#scp -f <path>
+#git-upload-pack <path>
+`
+
+const PATH_BINDINGS_TEMPLATE =`# The following is a list of virtual paths that will be visible to external
+# users and the local path on the filesystem for each one.
+# Not everyone should be able to see the detailed internal structure of
+# your server's file system. They also probably don't need that much detailed
+# information. Here is your chance to filter, rearrange and simplify
+# the externally visible path structure. It also provides another layer of
+# security.
+# /:/some/path/to/your/root/content
+# /fun:/path/to/the/fun
+`
+
 // TODO make this much more comprehensive while being safe
 var PATH_REGEX = regexp.MustCompile("^[a-zA-Z0-9\\-\\./_]+$")
 
@@ -24,7 +55,7 @@ func pathMatch(path string) string {
 		path = "/" + path
 	}
 
-	pbFile, err := os.Open("path-bindings")
+	pbFile, err := os.Open(CLI.PathBindings)
 	if err != nil {
 		log.Printf("ERROR opening path-bindings: %s\n", err)
 		return ""
@@ -102,7 +133,7 @@ func commandMatch(cmdTemplate []string, cmd []string) []string {
 }
 
 func validateCommand(cmd []string) []string {
-	cmdFile, err := os.Open("commands")
+	cmdFile, err := os.Open(CLI.CommandList)
 	if err != nil {
 		log.Printf("ERROR %s\n", err)
 		return nil
@@ -134,10 +165,46 @@ func validateCommand(cmd []string) []string {
 }
 
 func main() {
-	// ssh-keygen -m PEM -f hostkey.pem
+	kong.Parse(&CLI)
+
+	// As a convenience, let's generate the files if they don't exist
+	if _, err := os.Stat(CLI.HostKey); os.IsNotExist(err) {
+		log.Printf("Generating host-key: %s\n", CLI.HostKey)
+		kgc := exec.Command("ssh-keygen", "-m", "PEM", "-f", CLI.HostKey, "-N", "")
+		err := kgc.Run()
+		if err != nil {
+			log.Printf("ERROR: %s\n", err)
+			os.Exit(1)
+		}
+	}
+
+	if _, err := os.Stat(CLI.CommandList); os.IsNotExist(err) {
+		log.Printf("Generating command-list: %s\n", CLI.CommandList)
+		cl, err := os.Create(CLI.CommandList)
+		if err != nil {
+			log.Printf("ERROR: %s\n", err)
+			os.Exit(1)
+		}
+
+		cl.WriteString(COMMAND_LIST_TEMPLATE)
+		cl.Close()
+	}
+
+	if _, err := os.Stat(CLI.PathBindings); os.IsNotExist(err) {
+		log.Printf("Generating path-bindings: %s\n", CLI.PathBindings)
+		pb, err := os.Create(CLI.PathBindings)
+		if err != nil {
+			log.Printf("ERROR: %s\n", err)
+			os.Exit(1)
+		}
+
+		pb.WriteString(PATH_BINDINGS_TEMPLATE)
+		pb.Close()
+	}
+
 	server := &ssh.Server{
-		Addr:        ":1966",
-		IdleTimeout: 10 * time.Second,
+		Addr:        ":" + CLI.Port,
+		IdleTimeout: CLI.IdleTimeout,
 	}
 
 	server.Handle(func(s ssh.Session) {
@@ -209,6 +276,7 @@ func main() {
 		// Passwords are never correct
 		return false
 	}))
-	server.SetOption(ssh.HostKeyFile("hostkey.pem"))
+	server.SetOption(ssh.HostKeyFile(CLI.HostKey))
+	log.Printf("Server started on port %s", CLI.Port)
 	log.Fatal(server.ListenAndServe())
 }
