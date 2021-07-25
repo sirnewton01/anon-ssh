@@ -136,7 +136,7 @@ func main() {
 		}
 		// TODO more sanitization of the path in addition to the server sanitization
 
-		cmd := exec.Command("ssh", fmt.Sprintf("%s@%s", username, u.Host), "gemini", u.Path)
+		cmd := exec.Command("ssh", fmt.Sprintf("%s@%s", username, u.Host), "gemini", path)
 
 		stdout, err := cmd.StdoutPipe()
 		if err != nil {
