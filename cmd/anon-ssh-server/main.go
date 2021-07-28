@@ -2,10 +2,10 @@ package main
 
 import (
 	"bufio"
+	"encoding/base64"
 	"fmt"
 	"github.com/alecthomas/kong"
 	"github.com/gliderlabs/ssh"
-	xcssh "golang.org/x/crypto/ssh"
 	"io"
 	"log"
 	"os"
@@ -17,16 +17,20 @@ import (
 )
 
 var CLI struct {
-	Port string `name:"port" default:"1966"`
-	IdleTimeout time.Duration `name:"idle-timeout" default:"10s"`
-	HostKey string `arg name:"hostkey" help:"Host PEM key to use for this server. If the file doesn't exist then one will be generated." type:"path" required:""`
-	CommandList string `arg name:"command-list" help:"Command list file is the list of commands that are permitted by anonymous clients. If the file doesn't exist a template will be generated." type:"path" required:""`
-	PathBindings string `arg name:"path-bindings" help:"Path binding file is the list of mappings of external paths to internal ones. If the file doesn't exist a template will be generated." type:"path" required:""`
+	ListenAddress string        `name:"listen-address" default:":1966"`
+	IdleTimeout   time.Duration `name:"idle-timeout" default:"10s"`
+	HostKey       string        `arg name:"hostkey" help:"Host PEM key to use for this server. If the file doesn't exist then one will be generated." type:"path" required:""`
+
+	DefaultCapsule string `arg name:"default-capsule" help:"Location of the configuration of the default capsule. If the directory doesn't exist a default capsule will be generated there." type:"path" required:""`
+
+	Capsule []string `name:"capsule" help:"The location of an extra capsule that will be virtually hosted with this server." type:"path"`
 }
 
 const COMMAND_LIST_TEMPLATE = `# The following is a list of commands templates that will be permitted on this server
 # It is important to choose a minimal set since anyone with access to your
 # server can run these without any authentication using this server.
+# Note the special <path> tokens represent paths relative to the capsule content
+# directory.
 #
 # Read-only commands:
 #cat <path>
@@ -35,81 +39,30 @@ const COMMAND_LIST_TEMPLATE = `# The following is a list of commands templates t
 #git-upload-pack <path>
 `
 
-const PATH_BINDINGS_TEMPLATE =`# The following is a list of virtual paths that will be visible to external
-# users and the local path on the filesystem for each one.
-# Not everyone should be able to see the detailed internal structure of
-# your server's file system. They also probably don't need that much detailed
-# information. Here is your chance to filter, rearrange and simplify
-# the externally visible path structure. It also provides another layer of
-# security.
-# /:/some/path/to/your/root/content
-# /fun:/path/to/the/fun
+const GROUP_TEMPLATE = `# This is a list of public keys and additional groups
+# for the key. Additional groups can give access to additional commands.
+#
+# <key type> <key> group1 group2 ...
+# ssh-rsa ADKFJSKLDFJ... admin site-admin
+# 
+# Additional commands for a group are listed in a file commands-groupname
+# (eg. commands-admin and commands-site-admin from above example) with the
+# same format as the commands file.
 `
 
 // TODO make this much more comprehensive while being safe
 var PATH_REGEX = regexp.MustCompile("^[a-zA-Z0-9\\-\\./_]+$")
 
-func pathMatch(path string) string {
+func pathMatch(path string, capsuleContentPath string) string {
 	path = filepath.Clean(path)
 	if !filepath.IsAbs(path) {
 		path = "/" + path
 	}
 
-	pbFile, err := os.Open(CLI.PathBindings)
-	if err != nil {
-		log.Printf("ERROR opening path-bindings: %s\n", err)
-		return ""
-	}
-	defer pbFile.Close()
-
-	scanner := bufio.NewScanner(pbFile)
-
-	matchKey := ""
-	matchVal := ""
-
-	for scanner.Scan() {
-		l := scanner.Text()
-		// Skip comments
-		if strings.HasPrefix(l, "#") {
-			continue
-		}
-
-		mp := strings.Split(l, ":")
-		if len(mp) != 2 {
-			log.Printf("Invalid entry in path-bindings: %s\n", l)
-			continue
-		}
-
-		k, v := mp[0], mp[1]
-
-		// This is a perfect match, return
-		//  with the value
-		if path == k {
-			return v
-		}
-
-		// This must match as a full path segment
-		if !strings.HasSuffix(k, "/") {
-			k = k + "/"
-		}
-
-		if strings.HasPrefix(path, k) {
-			if len(k) > len(matchKey) {
-				matchKey = k
-				matchVal = v
-			}
-		}
-	}
-
-	if matchKey != "" {
-		return filepath.Join(matchVal, path[len(matchKey):])
-	}
-
-	log.Printf("Unrecognized path: %s\n", path)
-	return ""
+	return filepath.Join(capsuleContentPath, path[1:])
 }
 
-func commandMatch(cmdTemplate []string, cmd []string) []string {
+func commandMatch(cmdTemplate []string, cmd []string, capsuleContentPath string) []string {
 	for i := range cmdTemplate {
 		if cmdTemplate[i] == "<path>" {
 			// Special handling for paths
@@ -117,7 +70,7 @@ func commandMatch(cmdTemplate []string, cmd []string) []string {
 				return nil
 			}
 
-			matchedPath := pathMatch(cmd[i])
+			matchedPath := pathMatch(cmd[i], capsuleContentPath)
 
 			if matchedPath == "" {
 				return nil
@@ -132,36 +85,77 @@ func commandMatch(cmdTemplate []string, cmd []string) []string {
 	return cmdTemplate
 }
 
-func validateCommand(cmd []string) []string {
-	cmdFile, err := os.Open(CLI.CommandList)
-	if err != nil {
-		log.Printf("ERROR %s\n", err)
-		return nil
+func validateCommand(cmd []string, capsulePath string, publicKey string) []string {
+	cmdFiles := []string{"commands"}
+
+	// Consult the group file if available to see if there are any
+	//  additional commands that this user can run.
+	groupFile, err := os.Open(filepath.Join(capsulePath, "group"))
+	if err == nil {
+		defer groupFile.Close()
+		s := bufio.NewScanner(groupFile)
+		for s.Scan() {
+			l := s.Text()
+			if len(l) > len(publicKey) && strings.HasPrefix(l, publicKey) {
+				groups := strings.Split(l[len(publicKey):], " ")
+				for _, g := range groups {
+					cmdFiles = append(cmdFiles, fmt.Sprintf("commands-%s", g))
+				}
+				break
+			}
+		}
 	}
-	defer cmdFile.Close()
 
-	scanner := bufio.NewScanner(cmdFile)
-	for scanner.Scan() {
-		l := scanner.Text()
-
-		if len(l) == 0 || strings.HasPrefix(l, "#") {
+	for _, cf := range cmdFiles {
+		cmdFile, err := os.Open(filepath.Join(capsulePath, cf))
+		if err != nil {
+			log.Printf("ERROR %s\n", err)
 			continue
 		}
+		defer cmdFile.Close()
 
-		cmdTemplate := strings.Split(l, " ")
+		capsuleContentPath := filepath.Join(capsulePath, "content")
 
-		if len(cmdTemplate) != len(cmd) {
-			continue
-		}
+		scanner := bufio.NewScanner(cmdFile)
+		for scanner.Scan() {
+			l := scanner.Text()
 
-		cmdMatch := commandMatch(cmdTemplate, cmd)
+			if len(l) == 0 || strings.HasPrefix(l, "#") {
+				continue
+			}
 
-		if cmdMatch != nil && len(cmdMatch) > 0 {
-			return cmdMatch
+			cmdTemplate := strings.Split(l, " ")
+
+			if len(cmdTemplate) != len(cmd) {
+				continue
+			}
+
+			cmdMatch := commandMatch(cmdTemplate, cmd, capsuleContentPath)
+
+			if cmdMatch != nil && len(cmdMatch) > 0 {
+				return cmdMatch
+			}
 		}
 	}
 
 	return nil
+}
+
+func isCapsuleForHost(capsulePath string, host string) bool {
+	hostFile, err := os.Open(filepath.Join(capsulePath, "host"))
+	if err != nil {
+		log.Printf("ERROR: %s\n", err)
+		return false
+	}
+
+	scanner := bufio.NewScanner(hostFile)
+	for scanner.Scan() {
+		if host == scanner.Text() {
+			return true
+		}
+	}
+
+	return false
 }
 
 func main() {
@@ -178,50 +172,98 @@ func main() {
 		}
 	}
 
-	if _, err := os.Stat(CLI.CommandList); os.IsNotExist(err) {
-		log.Printf("Generating command-list: %s\n", CLI.CommandList)
-		cl, err := os.Create(CLI.CommandList)
+	if _, err := os.Stat(CLI.DefaultCapsule); os.IsNotExist(err) {
+		log.Printf("Generating default capsule: %s\n", CLI.DefaultCapsule)
+		err := os.Mkdir(CLI.DefaultCapsule, 0700)
 		if err != nil {
 			log.Printf("ERROR: %s\n", err)
 			os.Exit(1)
 		}
 
-		cl.WriteString(COMMAND_LIST_TEMPLATE)
-		cl.Close()
-	}
+		// We can't guess what the hostname is supposed to be
+		//  so we'll generate it in case they want to fill it in
+		//  later.
+		hf, err := os.Create(filepath.Join(CLI.DefaultCapsule, "host"))
+		if err != nil {
+			log.Printf("ERROR: %s\n", err)
+			os.Exit(1)
+		}
+		hf.WriteString("")
+		hf.Close()
 
-	if _, err := os.Stat(CLI.PathBindings); os.IsNotExist(err) {
-		log.Printf("Generating path-bindings: %s\n", CLI.PathBindings)
-		pb, err := os.Create(CLI.PathBindings)
+		cf, err := os.Create(filepath.Join(CLI.DefaultCapsule, "commands"))
+		if err != nil {
+			log.Printf("ERROR: %s\n", err)
+			os.Exit(1)
+		}
+		cf.WriteString(COMMAND_LIST_TEMPLATE)
+		cf.Close()
+
+		err = os.Mkdir(filepath.Join(CLI.DefaultCapsule, "content"), 0700)
 		if err != nil {
 			log.Printf("ERROR: %s\n", err)
 			os.Exit(1)
 		}
 
-		pb.WriteString(PATH_BINDINGS_TEMPLATE)
-		pb.Close()
+		idxf, err := os.Create(filepath.Join(CLI.DefaultCapsule, "content", "index.gmi"))
+		if err != nil {
+			log.Printf("ERROR: %s\n", err)
+			os.Exit(1)
+		}
+		idxf.WriteString("Welcome to my capsule!")
+		idxf.Close()
+
+		gf, err := os.Create(filepath.Join(CLI.DefaultCapsule, "group"))
+		if err != nil {
+			log.Printf("ERROR: %s\n", err)
+			os.Exit(1)
+		}
+		gf.WriteString(GROUP_TEMPLATE)
+		gf.Close()
 	}
 
 	server := &ssh.Server{
-		Addr:        ":" + CLI.Port,
+		Addr:        CLI.ListenAddress,
 		IdleTimeout: CLI.IdleTimeout,
 	}
 
 	server.Handle(func(s ssh.Session) {
-		pubkey := xcssh.FingerprintSHA256(s.PublicKey())
+		host := "default"
+		for _, e := range s.Environ() {
+			if strings.HasPrefix(e, "HOST=") && len(e) > 5 {
+				host = e[5:]
+				if host == "" {
+					host = "default"
+				}
+				break
+			}
+		}
+		pubkey := s.PublicKey().Type() + " " + base64.StdEncoding.EncodeToString(s.PublicKey().Marshal())
 
 		if len(s.Command()) == 0 {
-			log.Printf("Greeting sent\n")
-			io.WriteString(s, fmt.Sprintf("Welcome %s\n", s.User()))
+			io.WriteString(s, fmt.Sprintf("Welcome to %s, %s\n", host, s.User()))
 			io.WriteString(s, fmt.Sprintf("Your public key is %s\n", pubkey))
 			io.WriteString(s, fmt.Sprintf("Your environment: %v\n", s.Environ()))
 			s.Exit(0)
+			log.Printf("Greeting sent\n")
 			return
 		}
 
 		log.Printf("Command requested: %v\n", s.Command())
 
-		cmd := validateCommand(s.Command())
+		capsule := CLI.DefaultCapsule
+		if host != "default" && !isCapsuleForHost(capsule, host) {
+			// Let's try one of the alternate capsules
+			//  for a match.
+			for _, c := range CLI.Capsule {
+				if isCapsuleForHost(c, host) {
+					capsule = c
+					break
+				}
+			}
+		}
+
+		cmd := validateCommand(s.Command(), capsule, pubkey)
 
 		if len(cmd) == 0 {
 			log.Printf("Command blocked: %v\n", s.Command())
@@ -232,6 +274,7 @@ func main() {
 
 		log.Printf("Executing command: %v\n", cmd)
 		c := exec.Command(cmd[0], cmd[1:]...)
+		c.Dir = capsule
 		stdout, err := c.StdoutPipe()
 		if err != nil {
 			log.Printf("ERROR: %s\n", err)
@@ -277,6 +320,6 @@ func main() {
 		return false
 	}))
 	server.SetOption(ssh.HostKeyFile(CLI.HostKey))
-	log.Printf("Server started on port %s", CLI.Port)
+	log.Printf("Server started on addresss %s", CLI.ListenAddress)
 	log.Fatal(server.ListenAndServe())
 }
