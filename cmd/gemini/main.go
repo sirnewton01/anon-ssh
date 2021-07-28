@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	gemini "git.sr.ht/~yotam/go-gemini"
+	"github.com/alecthomas/kong"
 	"io"
 	"mime"
 	"net/url"
@@ -11,6 +13,13 @@ import (
 	"path/filepath"
 	"strings"
 )
+
+var CLI struct {
+	Path          string `arg name:"path" help:"The path/URL of the gemini resource to start a transaction or the root of a capsule to start a server." required""`
+	ListenAddress string `flag name:"listen-address" help:"Start a gemini server and listen on this address and the provided path as the root of the capsule. Example: --listen-address=:1965"`
+	HostCertPEM   string `flag name:"host-cert" help:"The path to the host cert in PEM format."`
+	HostKeyPEM    string `flag name:"host-key" help:"The path to the host private key in PEM format."`
+}
 
 func assertAnonConfig(username string, hostname string) error {
 	// Check using ssh -G whether things appear to be set up
@@ -89,11 +98,11 @@ Match user anonymous
 		}
 		hostkey := string(hk)
 
-                kh, err := os.OpenFile(filepath.Join(sshconfdir, "known_hosts"), os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
-                if err != nil {
-                        return err
-                }
-                defer kh.Close()
+		kh, err := os.OpenFile(filepath.Join(sshconfdir, "known_hosts"), os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+		if err != nil {
+			return err
+		}
+		defer kh.Close()
 
 		kh.WriteString(hostkey)
 	}
@@ -101,13 +110,74 @@ Match user anonymous
 	return nil
 }
 
-func main() {
-	if len(os.Args) != 2 {
-		fmt.Printf("Usage: %s [<path>|<gemssh_url>]\n", os.Args[0])
-		os.Exit(127)
+type handler struct {
+	path string
+}
+
+func (h handler) Handle(req gemini.Request) gemini.Response {
+	u, _ := url.Parse(req.URL)
+	resp := gemini.Response{}
+	// TODO sanitize
+	p := filepath.Join(h.path, u.Path)
+
+	file, err := os.Open(p)
+	if err != nil {
+		resp.Status = 51
+		resp.Meta = "Not Found"
+		return resp
 	}
 
-	p := os.Args[1]
+	if info, err := file.Stat(); err != nil {
+		file.Close()
+		resp.Status = 51
+		resp.Meta = "Not Found"
+		return resp
+	} else if info.IsDir() {
+		file.Close()
+
+		p = filepath.Join(p, "index.gmi")
+		file, err = os.Open(p)
+		if err != nil {
+			resp.Status = 51
+			resp.Meta = "Not Found"
+			return resp
+		}
+	}
+
+	fe := filepath.Ext(p)
+	mt := ""
+	if fe != "" {
+		mt = mime.TypeByExtension(fe)
+	}
+
+	if fe == ".gmi" {
+		mt = "text/gemini"
+	} else if mt == "" {
+		mt = "application/octet-stream"
+	}
+
+	resp.Status = 20
+	resp.Meta = mt
+	resp.Body = file
+
+	return resp
+}
+
+func main() {
+	kong.Parse(&CLI)
+
+	p := CLI.Path
+
+	if CLI.ListenAddress != "" {
+		if CLI.HostCertPEM == "" || CLI.HostKeyPEM == "" {
+			fmt.Printf("When running in server mode the host-cert and host-key must be provided\n")
+			os.Exit(127)
+		}
+
+		h := handler{p}
+
+		panic(gemini.ListenAndServe(CLI.ListenAddress, CLI.HostCertPEM, CLI.HostKeyPEM, h))
+	}
 
 	u, err := url.Parse(p)
 
@@ -167,43 +237,36 @@ func main() {
 		}
 
 		os.Exit(cmd.ProcessState.ExitCode())
+	} else if err == nil && u.Scheme == "gemini" {
+		if u.Port() == "" {
+			u.Host = u.Host + ":1965"
+		}
+		gemini.DefaultClient.InsecureSkipVerify = true
+		resp, err := gemini.Fetch(u.String())
+		if err != nil {
+			panic(err)
+		}
+		fmt.Printf("%d %s\r\n", resp.Status, resp.Meta)
+		if resp.Body != nil {
+			defer resp.Body.Close()
+			if _, err := io.Copy(os.Stdout, resp.Body); err != nil {
+				panic(err)
+			}
+		}
 	} else if err == nil && u.Scheme != "" {
 		fmt.Printf("Only gemssh:// URL scheme is supported\n")
 		os.Exit(127)
 	} else {
-		file, err := os.Open(p)
-		if err != nil {
-			fmt.Printf("51 Not Found\r\n")
-			os.Exit(51)
+		req := gemini.Request{}
+		h := handler{p}
+		resp := h.Handle(req)
+		fmt.Printf("%d %s\r\n", resp.Status, resp.Meta)
+		if resp.Status > 29 {
+			os.Exit(resp.Status)
 		}
-		defer file.Close()
-		if info, err := file.Stat(); err != nil {
-			fmt.Printf("51 Not Found\r\n")
-			os.Exit(51)
-		} else if info.IsDir() {
-			file, err = os.Open(filepath.Join(p, "index.gmi"))
-			if err != nil {
-				fmt.Printf("51 Not Found\r\n")
-				os.Exit(51)
-			}
-			p = file.Name()
-			defer file.Close()
-		}
+		defer resp.Body.Close()
 
-		fe := filepath.Ext(p)
-		mt := ""
-		if fe != "" {
-			mt = mime.TypeByExtension(fe)
-		}
-		if fe == ".gmi" {
-			mt = "text/gemini"
-		} else if mt == "" {
-			mt = "application/octet-stream"
-		}
-
-		fmt.Printf("20 %s\r\n", mt)
-
-		if _, err := io.Copy(os.Stdout, file); err != nil {
+		if _, err := io.Copy(os.Stdout, resp.Body); err != nil {
 			panic(err)
 		}
 	}
