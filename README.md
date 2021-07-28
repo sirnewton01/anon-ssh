@@ -131,10 +131,10 @@ and so this environment variable is provided as a convention to support virtual
 hosting.
 
 The final line points to a new SSH private key that doesn't exist yet. So, let's
-create a directory for it ~/.ssh/newhost.com and use ssh-keygen tool to generate
-the key in there. Note that there are other kinds of cryptographic algorithms
-that we can use with the key. RSA is very commonly used and most likely to work
-with an SSH server that is configured for anonymous access.
+use ssh-keygen tool to generate the key in there. Note that there are other
+kinds of cryptographic algorithms that we can use with the key. RSA is very
+commonly used and most likely to work with an SSH server that is configured for
+anonymous access.
 
 ```
 ssh-keygen -b 2048 -t rsa -f ~/.ssh/example.com_anon_id_rsa -q -N ""
@@ -184,8 +184,8 @@ RSA host key for 192.168.219.149 has changed and you have requested strict check
 Host key verification failed.
 ```
 
-Note that when SSH anonymously there are no guarantees that the server will
-support any particular command, or even interactive shell access. In this
+Note that when using SSH anonymously there are no guarantees that the server
+will support any particular command, or even interactive shell access. In this
 framework it is left up to the user to discover hosts and side-band
 communication channels via search engines, DNS, or even word of mouth to
 know the kinds of services being offered by the host. One recommendation to
@@ -269,7 +269,7 @@ as there is less trust of clients and there are fewer ways to block them from
 the system.
 
 ```
-command-allow-list:
+commands:
 
 scp -t <path>
 git-receive-pack <path>
@@ -295,14 +295,13 @@ approach can work here too, except that this will work with multiple protocols
 and tools.
 
 ```
-bindings/myservice.com:
+capsule1/content-location:
 
-/=/var/srv/content
-/tmp=/var/srv/tmp
+/var/srv/content
 ```
 
-The bindings also serve as a kind of list of allowed locations, which helps
-with layered security. The SSH server will convert virtual paths to physical
+The mapping also serves as a layer of security preventing access to physical
+paths that are internal. The SSH server will convert virtual paths to physical
 ones before invoking a command and passing in the path parameter(s) with
 special care taken to avoid maliciously constructed paths from escaping the
 virtual directory structure.
@@ -318,23 +317,6 @@ or even public keys are required. Instead, if a service supports them there
 will be some record, storage location allocated for that public key so that
 this information can be used when the user interacts with it in the future.
 
-If there are special files, directories, or other resources available for
-a TOFU user for discoverability purposes these are made available in a special
-path ~, which both matches existing Unix conventions and is typical for
-regular SSH accounts too. Note that in URL's the path should be interpreted
-as /~ as the URL specification requires a / as a delimiter between the host
-(and port) and the path.
-
-Access to other TOFU users' data is left out of scope for the purposes of this
-framework. The recommendation is that such sharing should probably require
-non-anonymous access so that more details about the user can be known, such as
-some kind of unique, but memorable user name.
-
-It is expected that for most server implementations that are file system
-based the TOFU user's private information will be stored in a directory with
-a name matching the fingerprint of the public key. After authentication paths
-prefixed with a ~ will bind to that location.
-
 ### Virtual hosting
 
 As mentioned earlier, virtual hosting adds a tremendous amount of flexibility
@@ -348,16 +330,13 @@ beginning. Others may be more confident in the stability of their deployment
 and might not require it.
 
 A virtual host deployed on one server may appear entirely different in terms
-of path structure than another one. This is why the bindings above are
-in a file that matches the name of the virtual host where they apply. For
-another virtual host things could look much different and user may never
-notice, except if they look at the IP address.
+of path structure than another one. The same virtual path could point to an
+entirely different physical path based on the host name.
 
 ```
-bindings/soccer-times.com:
+capsule2/content-location:
 
-/=/var/srv/soccer
-/fifa-schedules=/var/srv/fifa
+/var/srv/soccer
 ```
 
 ### Additional security measures
@@ -372,20 +351,20 @@ It is possible that the allowed command list and paths are not sufficient to
 protect against certain types of intrusion, even when the server runs as a
 restricted OS user account. There can be weaknesses in the server implementation
 or the OS level permissions, groups and file-level accesses. Additional
-isolation can be achieved with containers, such as Docker where only the
+isolation can be achieved with containers, such as Docker, where only the
 paths that are permitted will be mounted into the container. If an intrusion
 were possible then the filesystem view would only be to the container and not
 the parent OS. Virtual machines could also function in the same way.
 
 There are measures recommended above that would limit the amount of time that
 a command may be allowed to run without any network activity before it is
-forcibly closed. This is an effort to help prevent excessive CPU usage on
+forcibly closed. This is an effort to help prevent excessive resource usage on
 the server. However, it may be possible that there are other critical things
 running there. It depends on how the deployment is being managed. Docker
 containers and VM's would offer a way to limit CPU and memory consumption to
 help and improve isolation from other critical processes.
 
-As anonymous SSH services become more widely deployed other security concerns
+As anonymous SSH services become more widely deployed other security problems 
 and solutions may appear over time.
 
 ## Summary
