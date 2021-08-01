@@ -4,7 +4,8 @@ SSH Capsules
 *What is this?*
 
 TL;DR It's a way to use SSH that's as simple as browsing the web, but supports
-interoperability of protocols and tools.
+interoperability of protocols and tools. A space capsule has a combination
+of systems to accomplish specific goals.
 
 This is a convention built on top of the common Secure SHell (SSH) Protocol.
 SSH Capsules have these capabilities.
@@ -16,7 +17,7 @@ SSH Capsules have these capabilities.
 Clients have a single method to manage their identity that works with multiple
 tools and with the flexibility to support different levels of anonymomity.
 
-*What's so special about SSH?*
+**What's so special about SSH?**
 
 SSH is a protocol that provides more than remote interactive shells over an
 encrypted channel. It is also has a distributed trust mechanism that helps to
@@ -28,7 +29,7 @@ transparent to the user once it has been configured and allows them to tailor
 their identity for use with every and all hosts. Plus, SSH is mature and used
 very widely.
 
-*What's the current state?*
+**What's the current state?**
 
 When accessing an SSH service a user identifier must be provided and generally
 production services require clients to satisfy a challenge to authenticate
@@ -220,12 +221,12 @@ golf course.
 
 ## Capsule Addresses
 
-Providing a [Gemini SSH] face to your site might also serve as a friendly
+Providing a [Gemini] face to your capsule might also serve as a friendly
 introduction. Note that Gemini browser generally uses URL-based addresses
 instead of SSH addresses. Here is an example of the same gemini address
 expressed in both forms.
 
-[Gemini SSH](cmd/gemini/README.md)
+[Gemini](cmd/gemini/README.md)
 
 ```
 gemini anonymous@example.com:/hello.gmi
