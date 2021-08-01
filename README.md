@@ -4,8 +4,8 @@ SSH Capsules
 **What is this?**
 
 TL;DR It's a way to use SSH that's as simple as browsing the web, but supports
-interoperability of protocols and tools. A space capsule has a combination
-of systems to accomplish specific goals.
+interoperability of protocols and tools. A space capsule is a combination
+of systems that work together.
 
 This is a convention built on top of the common Secure SHell (SSH) Protocol.
 SSH Capsules have these capabilities.
