@@ -1,4 +1,4 @@
-module github.com/sirnewton01/anon-ssh-server
+module github.com/sirnewton01/ssh-capsules
 
 go 1.14
 

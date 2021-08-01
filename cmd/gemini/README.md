@@ -16,7 +16,10 @@ anonymous, following the Anonymous SSH framework. It will run the gemini command
 on the remote system substituting the URL for just the remote file path. This
 command is analogous to the request portion of the Gemini Protocol with some
 notable differences. The full URL is not provided here and there is no CRLF
-terminator. Note that the path is expected to be UTF-8 encoded.
+terminator. Note that the path is expected to be UTF-8 encoded. This command
+can produce error messages on standard error and exit codes related to transport
+level errors in either SSH or TLS. Note that exit code will be zero for success
+2x responses and will be the status code itself for error statuses.
 
 ```
 gemini /some/path
@@ -25,7 +28,9 @@ gemini /some/path
 When the command is invoked on a local file path it will return a well-formed
 Gemini protocol response. If the local file path exists and can be read by the
 current user then a 20 status is returned with the media type along with the
-contents of the file. Otherwise, a 51 (Not Found) status is returned.
+contents of the file. Otherwise, a 51 (Not Found) status is returned. Success
+statuses will exit with code 0, any non-success statuses exit with the code
+set to the status integer.
 
 ```
 20 text/plain
