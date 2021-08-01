@@ -50,7 +50,7 @@ cases accounts can be created automatically when a user presents a public
 encryption key and can prove that they have access to its private key. See
 [Project Gemini] for examples of this kind of super light account creation.
 
-[Project Gemini](https://gemini.circumlunare.space/)
+[Project Gemini](https://gemini.circumlunar.space/)
 
 Unfortunately, these sorts of interactions are not yet in common use with
 SSH, mostly because there aren't established conventions to permit someone

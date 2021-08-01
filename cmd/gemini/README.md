@@ -8,7 +8,7 @@ will set up any extra SSH configuration for the remote host to set up anonymous
 SSH access, such as a public key if none exists.
 
 ```
-gemini [gemssh|gemini]://[username@]somehost/some/path
+gemini [gemcap|gemini]://[username@]somehost/some/path
 ```
 
 Note that if no username is provided then it will be assumed that it is

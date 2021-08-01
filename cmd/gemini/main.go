@@ -181,7 +181,7 @@ func main() {
 
 	u, err := url.Parse(p)
 
-	if err == nil && u.Scheme == "gemssh" {
+	if err == nil && u.Scheme == "gemcap" {
 		// Perform SSH functions to connect to server
 
 		// TODO handle warning / error messages about host key verification
@@ -254,7 +254,7 @@ func main() {
 			}
 		}
 	} else if err == nil && u.Scheme != "" {
-		fmt.Printf("Only gemssh:// URL scheme is supported\n")
+		fmt.Printf("Only gemcap:// URL scheme is supported\n")
 		os.Exit(127)
 	} else {
 		req := gemini.Request{}
