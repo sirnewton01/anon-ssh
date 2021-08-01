@@ -1,7 +1,7 @@
 SSH Capsules
 ============
 
-*What is this?*
+**What is this?**
 
 TL;DR It's a way to use SSH that's as simple as browsing the web, but supports
 interoperability of protocols and tools. A space capsule has a combination
