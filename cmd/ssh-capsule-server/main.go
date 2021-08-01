@@ -58,8 +58,11 @@ func pathMatch(path string, capsuleContentPath string) string {
 	if !filepath.IsAbs(path) {
 		path = "/" + path
 	}
+	for ;strings.HasPrefix(path, "/.."); {
+		path = path[3:]
+	}
 
-	return filepath.Join(capsuleContentPath, path[1:])
+	return filepath.Join(capsuleContentPath, path)
 }
 
 func commandMatch(cmdTemplate []string, cmd []string, capsuleContentPath string) []string {
