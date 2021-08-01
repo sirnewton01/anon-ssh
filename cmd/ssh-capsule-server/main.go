@@ -99,7 +99,9 @@ func validateCommand(cmd []string, capsulePath string, publicKey string) []strin
 			if len(l) > len(publicKey) && strings.HasPrefix(l, publicKey) {
 				groups := strings.Split(l[len(publicKey):], " ")
 				for _, g := range groups {
-					cmdFiles = append(cmdFiles, fmt.Sprintf("commands-%s", g))
+					if g != "" {
+						cmdFiles = append(cmdFiles, fmt.Sprintf("commands-%s", g))
+					}
 				}
 				break
 			}
