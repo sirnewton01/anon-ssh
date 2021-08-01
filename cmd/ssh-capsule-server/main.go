@@ -58,7 +58,7 @@ func pathMatch(path string, capsuleContentPath string) string {
 	if !filepath.IsAbs(path) {
 		path = "/" + path
 	}
-	for ;strings.HasPrefix(path, "/.."); {
+	for strings.HasPrefix(path, "/..") {
 		path = path[3:]
 	}
 
