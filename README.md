@@ -288,12 +288,12 @@ supported with OpenSSH, which limits some of the options.
 
 An SSH server implementation that support capsules would need to be
 capable of running SSH sessions as user "anonymous" that presents a public key
-that is unknown to it. The [SSH Capsule] implementation here is an example of a
+that is unknown to it. The [SSH Capsule Server] implementation here is an example of a
 compliant Capsule server that can be flexibly deployed and run in any OS user
 account in a variety of operating systems. Hopefully, there will be a variety
 of implementations to suit different requirements.
 
-[SSH Capsule](cmd/capsule-server)
+[SSH Capsule Server](cmd/ssh-capsule-server)
 
 ### Activity monitoring
 
