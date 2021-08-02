@@ -45,9 +45,9 @@ func assertAnonConfig(username string, hostname string) error {
 		!strings.Contains(conf, "port 1966") {
 
 		fmt.Fprintf(os.Stderr, `Add the following to your ~/.ssh/config to enable anonymous access:
+IdentitiesOnly yes
 
 Match user anonymous
-  IdentitiesOnly yes
   PubkeyAuthentication yes
   PasswordAuthentication no
   PreferredAuthentications publickey

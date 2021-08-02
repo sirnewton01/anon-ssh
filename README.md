@@ -89,8 +89,11 @@ above can be made for capsule access like this.
 ```
 .ssh/config:
 
+# The SSH agent will often override the per-host public key settings
+#  and provide the wrong one for a host.
+IdentitiesOnly yes
+
 Match user anonymous
-  IdentitiesOnly yes
   PubkeyAuthentication yes
   PasswordAuthentication no
   PreferredAuthentications publickey
