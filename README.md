@@ -29,19 +29,42 @@ transparent to the user once it has been configured and allows them to tailor
 their identity for use with every and all hosts. Plus, SSH is mature and used
 very widely.
 
-**What's the current state?**
+**How would I use a capsule?**
+
+Capsules can be accessed using a tool that works with SSH (git, scp, gemini) or
+even the ssh command itself. You can run commands like these to access capsules
+on the internet, even if you have no account on them.
+
+```
+scp $(capsule comicstrip.com):/daily_comic.jpg ~/Downloads
+git clone $(capsule sourcecode.net)/cat_picture_generator
+gemini gemcap://smolweb.net
+ssh $(capsule currenttime.net)
+```
+
+The [capsule](cmd/capsule/README.md) command embedded in some of these
+examples is a helper included in this project that helps you to get the host
+configuration set up before you connect. If the capsule is already set
+up in your client or at some point in the future when capsules become
+supported by more tools you could use "capsule@host" instead.
+
+Graphical applications, such as browsers could exist someday and would
+work as seemlessly as web browsers do today. Perhaps they would have some
+graphical capabilities for managing your SSH identities.
+
+**What's the current state of SSH?**
 
 When accessing an SSH service a user identifier must be provided and generally
 production services require clients to satisfy a challenge to authenticate
 using private information known only to the two parties when the user account
-is created. Both anonymous and time of first use account creation cannot require
+is created. Time of first use authentication cannot require
 private information for authentication, especially without an agreed user
 identifier since there is no side-band channel for that. SSH requires some kind
 of user identifier to authenticate, even when using key based authentication.
 The local OS username is often chosen as the default to satisfy the requirement,
-which unfortunately leaks some potentially private information.
+which unfortunately leaks some potentially trackable information.
 
-A variety internet services provide a level of access to anonymous users without
+A variety internet services provide a level of access to users without
 and operating system account for them. This is how people use their web browser
 to read things on the web. Some also give them the ability to sign up with time
 of first use account creation, often without creating heavy weight operating
@@ -61,18 +84,25 @@ shell access to manage low-level infrastructure, instead of high-level
 services that we see with the world-wide web.
 
 With a convention in place, users can access capsules as high-level services
-with ease. So, how do they get set up?
+with ease. So, how do they get set up? Eventually, much of the setup can be
+automated. Included here is a tool called setup-capsule that will preconfigure
+your SSH so that you can use a capsule. Capsule aware tools can use this
+capability (e.g. the gemini command included here). Perhaps someday SSH itself
+could have support for capsules built-in to the specification.
+
+If you are curious about how the details of the client setup and how capsules
+work these are covered below.
 
 ## Client setup
 
 Clients need these settings to the SSH client configuration when connecting
 to a capsule. Note that SSH capsules are built on top of SSH so they require
 some kind of user name. This convention specifies that the user name is always
-"anonymous" instead of the default local user name to prevent leaking of local
+"capsule" instead of the default local user name to prevent leaking of local
 information that could be used for tracking purposes.
 
 ```
-User Name: anonymous
+User Name: capsule
 Port: 1966
 Authentications: Public Key (not password)
 Identity File: <key for identity with this host>
@@ -93,7 +123,7 @@ above can be made for capsule access like this.
 #  and provide the wrong one for a host.
 IdentitiesOnly yes
 
-Match user anonymous
+Match user capsule
   PubkeyAuthentication yes
   PasswordAuthentication no
   PreferredAuthentications publickey
@@ -106,7 +136,7 @@ those capsules may produce some kind of greeting when invoked without
 any command.
 
 ```
-ssh anonymous@example.com
+ssh capsule@example.com
 ```
 
 If you don't have a public key alredy this command will likely fail. You can
@@ -140,14 +170,14 @@ for example.com
 ```
 .ssh/example.com_anon_config:
 
-Match user anonymous host example.com
+Match user capsule host example.com
   SetEnv HOST=example.com TZ=America/New_York
   IdentityFile ~/.ssh/example.com_anon_id_rsa 
 ```
 
 You can see that a special environment variable HOST is set when connecting
 to example.com. This will allow SSH servers to support virtual hosting, which
-is a capability that other protocols have, such as http and is super useful for
+is a capability that other protocols have, such as HTTP and is super useful for
 service providers to combine or separate services for administration purposes.
 SSH protocol doesn't send to the server the hostname that the client connected
 and so this environment variable is provided as a convention to support virtual
@@ -157,13 +187,13 @@ The final line points to a new SSH private key that doesn't exist yet. So, let's
 use ssh-keygen tool to generate the key in there. Note that there are other
 kinds of cryptographic algorithms that we can use with the key. RSA is very
 commonly used and most likely to work with an SSH server that is configured for
-anonymous access.
+capsule access.
 
 ```
 ssh-keygen -b 2048 -t rsa -f ~/.ssh/example.com_anon_id_rsa -q -N ""
 ```
 
-Now, when you conect to anonymous@example.com it will use this key for that
+Now, when you conect to capsule@example.com it will use this key for that
 site and none of the others restricting your identity to only that one site.
 This can be useful to help and avoid certain user tracking mechanisms popular
 on the net. If you ever want to use a new identity with this site then you can
@@ -214,7 +244,7 @@ service owners is to have some kind of useful information available with a
 bare ssh request to their site.
 
 ```
-$ ssh anonymous@newhost.com
+$ ssh capsule@newhost.com
 
 Welcome
 
@@ -232,14 +262,14 @@ expressed in both forms.
 [Gemini](cmd/gemini/README.md)
 
 ```
-gemini anonymous@example.com:/hello.gmi
+gemini capsule@example.com:/hello.gmi
 gemcap://example.com/hello.gmi
 ```
 
 Both addresses will lead to the same request on the standard capsule port
 number over SSH. The first address defaults to port 1966, instead of 22 for
 SSH, because of the client configuration entry based on the username of
-"anonymous" as shown in the Client Setup. The second address defaults to
+"capsule" as shown in the Client Setup. The second address defaults to
 that port in the absence of a port in the URL by convention of the "gemcap"
 protocol, which is a short easily typed form of (gemini + capsule). Similar
 URL protocol name mappings and default ports can be used for other common
@@ -251,15 +281,20 @@ has their own method of starting an SSH request with the identity and trust
 settings for the host and invoking themselves as a command passing context
 information via command line arguments. The two sides generally pass data
 through a pipe over SSH. The gemini command run in the capsule is very simple
-and looks like this, which is a slight variant of the standard protocol
+and looks like this, which is a slight variant of the standard Gemini protocol
 specification.
 
 ```
-ssh anonymous@example.com gemini /hello.gmi
+ssh capsule@example.com gemini /hello.gmi
 20 text/gemini; charset=utf-8<CR><LF>
 # Welcome to Example
 ...
 ```
+
+Note that the line that starts with 20 is the stderr, which is where status
+messages, warnings and errors are sent, basically anything that isn't content.
+This follows the C and UNIX standards and makes it much easier to redirect the
+content from the extra information.
 
 Describing the gemini interactions in this transparent way provides a great
 deal of flexibility in the client and server implementations. A client could
@@ -280,7 +315,7 @@ default port 22. This choice was made for a number of reasons. Using a port abov
 the server as a non-root user on Unix systems, which can be granted limited
 permissions as part of a layered security approach.
 
-OpenSSH itself does not allow easy access to clients without either a
+OpenSSH itself does not allow access to clients without either a
 password or knowledge of their public key before connecting. If someday it
 were to support such a capability it could be configured to listen to both
 the standard port 22 and 1966 at the same time. Until that time, it is most
@@ -290,7 +325,7 @@ OpenSSH in some configurations. Virtual hosting and proxying is not currently
 supported with OpenSSH, which limits some of the options.
 
 An SSH server implementation that support capsules would need to be
-capable of running SSH sessions as user "anonymous" that presents a public key
+capable of running SSH sessions as user "capsule" that presents a public key
 that is unknown to it. The [SSH Capsule Server] implementation here is an example of a
 compliant Capsule server that can be flexibly deployed and run in any OS user
 account in a variety of operating systems. Hopefully, there will be a variety
@@ -302,19 +337,19 @@ of implementations to suit different requirements.
 
 Since SSH is often, but not always, used for interactive shells, timeouts are
 usually made very large, some implementations will attempt to automatically
-re-connect. Generally speaking, anonymous access to an SSH server is likely
+re-connect. Generally speaking, capsule access to an SSH server is likely
 to be non-interactive since interactive sessions could become costly as there
 are more concurrent sessions happening. It can also permit more snooping of the
-server. Most anonymous SSH servers will probably adopt some kind of active
+server. Most capsule servers will probably adopt some kind of active
 session termination policies based on inactivity. Servers should probably block
 direct shell access or exclude them from the lists of allowed commands,
 which is covered in the next section.
 
 ```
-$ ssh anonymous@someplace.com bash
+$ ssh capsule@someplace.com bash
 bash: command not found
 
-$ ssh anonymous@someplace.com some_long_running_command
+$ ssh capsule@someplace.com some_long_running_command
 ...
 Connection to someplace.com closed by remote host.
 ```
@@ -322,7 +357,7 @@ Connection to someplace.com closed by remote host.
 ### Allowed command list
 
 Since the recommended policy is to block any interactive shell access to the
-anonymous SSH server, it becomes much easier to implement a list of
+capsule server, it becomes much easier to implement a list of
 allowed commands that can run. Many of the tools that run on top of SSH rely on
 a version of that same tool to be installed on the server so that they can
 call themselves and pass information via command-line parameters and pipes
@@ -395,10 +430,10 @@ additional comands that are permitted for users of that group.
 
 As mentioned earlier, virtual hosting adds a tremendous amount of flexibility
 for managing the infrastructure of deployments. This is why the concept has
-been introduced here for anonymous SSH access where the underlying protocol
+been introduced here for capsule access where the underlying protocol
 does not have support for it, which is why it is considered optional, but
 strongly recommended in the client configuration. Service implementers may
-plan ahead and refuse anonymous SSH connections if the HOST environment
+plan ahead and refuse capsule connections if the HOST environment
 variable is not provided to give themselves the needed flexibility from the
 beginning. Others may be more confident in the stability of their deployment
 and might not require it.
@@ -438,7 +473,7 @@ running there. It depends on how the deployment is being managed. Docker
 containers and VM's would offer a way to limit CPU and memory consumption to
 help and improve isolation from other critical processes.
 
-As anonymous SSH services become more widely deployed other security problems 
+As SSH capsule services become more widely deployed other security problems 
 and solutions may appear over time. It is conceivable that capsule
 implementations could opt to simulate the protocols for scp, cat, ls, git, etc.
 without any direct command invocation of those tools in the server. Since each

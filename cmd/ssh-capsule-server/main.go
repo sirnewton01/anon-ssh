@@ -249,6 +249,14 @@ func main() {
 			io.WriteString(s, fmt.Sprintf("Welcome to %s, %s\n", host, s.User()))
 			io.WriteString(s, fmt.Sprintf("Your public key is %s\n", pubkey))
 			io.WriteString(s, fmt.Sprintf("Your environment: %v\n", s.Environ()))
+			// Some friendly warnings in case the client seems to be set up incorrectly
+			if s.User() != "capsule" {
+				io.WriteString(s.Stderr(), fmt.Sprintf("WARNING: your username is not configured as 'capsule' for this host. You might want to change your SSH settings to protect against tracking\n"))
+			}
+			if host == "default" {
+				io.WriteString(s.Stderr(), fmt.Sprintf("WARNING: you HOST environment variable is not set to the hostname that you are connecting. You might want to change your SSH settings to send the hostname so that you can take advantage of virtual hosting in the future.\n"))
+
+			}
 			s.Exit(0)
 			log.Printf("Greeting sent\n")
 			return

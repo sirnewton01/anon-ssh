@@ -1,12 +1,12 @@
-# Anonymous SSH Server
+# SSH Capsule Server
 
-This is a reference server implementation for Anonymous SSH access. It can
+This is a reference server implementation for SSH Capsules. It can
 support a variety of protocols on top of SSH, such as git, scp, gemini and
 others with a consistent root path structure making it much easier for
 users to cross protocol boundaries with the same or similar paths.
 
 Connections to the server may use any username, although most clients following
-the Anonymous SSH access framework will have the name "anonymous" to avoid
+the SSH Capsule framework will have the name "capsule" to avoid
 leaking any extra trackable details. Any public key at all is permitted
 to grant the user access to the service.
 
@@ -61,7 +61,7 @@ Commands that are allowed will run as the user that is running the server along
 with all of their privileges. A layered security approach should be taken to
 prevent malicious access to the server. Only the commands that are needed for
 the service should be allowed with the precise parameters. The service user
-should only have the access needed to run the anonymous SSH service and
+should only have the access needed to run the service and
 protocols in case of a command that is exploited for elevated privileges on the
 server. If necessary, the service could be put into a container or VM to
 further isolate the possible damage.
@@ -78,8 +78,8 @@ the public key that was used and the environment settings with the ssh client
 like this.
 
 ```
-$ ssh anonymous@example.com
-Welcome anonymous
+$ ssh capsule@example.com
+Welcome capsule user
 Your public key is SHA256:xpKAmi3+kC0BbDVRh6FdQHYR4TH6FCEu9iIgOUBCEDF
 Your environment: [LANG=en_US.UTF-8 HOST=example.com]
 ```
