@@ -19,6 +19,7 @@ var CLI struct {
 	ListenAddress string `flag name:"listen-address" help:"Start a gemini server and listen on this address and the provided path as the root of the capsule. Example: --listen-address=:1965"`
 	HostCertPEM   string `flag name:"host-cert" help:"The path to the host cert in PEM format."`
 	HostKeyPEM    string `flag name:"host-key" help:"The path to the host private key in PEM format."`
+	Quiet         bool   `flag name:"quiet" short:"q" help:"Silence the gemini response line that goes to stderr."`
 }
 
 type handler struct {
@@ -234,14 +235,18 @@ func main() {
 		req := gemini.Request{}
 		h := handler{p}
 		resp := h.Handle(req)
-		fmt.Fprintf(os.Stderr, "%d %s\r\n", resp.Status, resp.Meta)
-		if resp.Status > 29 {
-			os.Exit(resp.Status)
-		}
+		if !CLI.Quiet {
+		        fmt.Fprintf(os.Stderr, "%d %s\r\n", resp.Status, resp.Meta)
+	        }
 		defer resp.Body.Close()
 
-		if _, err := io.Copy(os.Stdout, resp.Body); err != nil {
+		 if _, err := io.Copy(os.Stdout, resp.Body); err != nil {
 			panic(err)
+		}
+
+		// Any non-success statuses become the exit code of this process
+		if resp.Status < 20 || resp.Status > 29 {
+			os.Exit(resp.Status)
 		}
 	}
 }
