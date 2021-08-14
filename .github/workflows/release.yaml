@@ -23,4 +23,4 @@ jobs:
         goarch: ${{ matrix.goarch }}
         project_path: "./cmd/gemini"
         binary_name: "gemini"
-        extra_files: LICENSE "./cmd/gemini/README.md"
+        extra_files: LICENSE
