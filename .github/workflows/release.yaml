@@ -9,44 +9,21 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  release-matrix:
-    name: release linux/amd64
+  build:
+    name: Build binaries
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        goos: [linux, windows, darwin]
-        goarch: [amd64, arm64]
-        exclude:
-          - goarch: arm64
-            goos: windows
     steps:
     - uses: actions/checkout@v2
     - name: Run tests
       run: go test -v -p=1 -timeout=0 ./...
-    - uses: wangyoucao577/go-release-action@v1.19
+    - uses: actions/checkout@v2
+    - name: Build
+      run: |
+        ./build.sh
+    - uses: actions/upload-artifact@v2
       with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        goos: ${{ matrix.goos }}
-        goarch: ${{ matrix.goarch }}
-        project_path: "./cmd/gemini"
-        binary_name: "gemini"
-        extra_files: LICENSE
-    - uses: wangyoucao577/go-release-action@v1.19
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        goos: ${{ matrix.goos }}
-        goarch: ${{ matrix.goarch }}
-        project_path: "./cmd/ssh-capsule-server"
-        binary_name: "ssh-capsule-server"
-        extra_files: LICENSE
-    - uses: wangyoucao577/go-release-action@v1.19
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        goos: ${{ matrix.goos }}
-        goarch: ${{ matrix.goarch }}
-        project_path: "./cmd/capsule"
-        binary_name: "capsule"
-        extra_files: LICENSE
+        name: binaries
+        path: release/
   build-and-push-image:
     runs-on: ubuntu-latest
     permissions:
