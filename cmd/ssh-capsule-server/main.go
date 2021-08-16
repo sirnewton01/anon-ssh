@@ -19,9 +19,9 @@ import (
 var CLI struct {
 	ListenAddress string        `name:"listen-address" default:":1966"`
 	IdleTimeout   time.Duration `name:"idle-timeout" default:"10s"`
-	HostKey       string        `arg name:"hostkey" help:"Host PEM key to use for this server. If the file doesn't exist then one will be generated." type:"path" required:""`
+	HostKey       string        `arg name:"hostkey" help:"Host PEM key to use for this server. If the file doesn't exist then one will be generated." type:"path" required:"" env:"HOST_KEY_LOC"`
 
-	DefaultCapsule string `arg name:"default-capsule" help:"Location of the configuration of the default capsule. If the directory doesn't exist a default capsule will be generated there." type:"path" required:""`
+	DefaultCapsule string `arg name:"default-capsule" help:"Location of the configuration of the default capsule. If the directory doesn't exist a default capsule will be generated there." type:"path" required:"" env:"CAPSULE_LOC"`
 
 	Capsule []string `name:"capsule" help:"The location of an extra capsule that will be virtually hosted with this server." type:"path"`
 }
@@ -215,7 +215,7 @@ func main() {
 			log.Printf("ERROR: %s\n", err)
 			os.Exit(1)
 		}
-		idxf.WriteString("Welcome to my capsule!")
+		idxf.WriteString("Welcome to my capsule!\n")
 		idxf.Close()
 
 		gf, err := os.Create(filepath.Join(CLI.DefaultCapsule, "group"))
