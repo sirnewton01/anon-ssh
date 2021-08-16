@@ -29,6 +29,8 @@ to find the VirtualBox VM that docker is using and manually forward port
 ```
 % docker run -it --rm --user $(id -u):$(id -g) -v $(pwd)/srv:srv -p 1966:1966 ghcr.io/sirnewton01/ssh-capsules # Linux will match the user ID and group ID to the provided ID's of the host
 % docker run -it --rm --user 1000:$(id -g) -v $(pwd)/srv:/srv -p 1966:1966 ghcr.io/sirnewton01/ssh-capsules # macOS volumes seem to be set always to uid 1000
+
+2021/08/16 01:27:23 Server started on addresss :1966
 ```
 
 You'll notice that the srv/ directory has some new content in it under
