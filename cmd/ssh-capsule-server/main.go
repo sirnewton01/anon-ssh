@@ -246,7 +246,7 @@ func main() {
 		pubkey := s.PublicKey().Type() + " " + base64.StdEncoding.EncodeToString(s.PublicKey().Marshal())
 
 		if len(s.Command()) == 0 {
-			io.WriteString(s, fmt.Sprintf("Welcome to %s, %s\n", host, s.User()))
+			io.WriteString(s, fmt.Sprintf("Welcome to %s, user %s\n", host, s.User()))
 			io.WriteString(s, fmt.Sprintf("Your public key is %s\n", pubkey))
 			io.WriteString(s, fmt.Sprintf("Your environment: %v\n", s.Environ()))
 			// Some friendly warnings in case the client seems to be set up incorrectly

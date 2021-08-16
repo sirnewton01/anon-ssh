@@ -1,6 +1,7 @@
 package setup
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"os/exec"
@@ -25,17 +26,8 @@ func AssertCapsuleConfig(hostname string) error {
 	}
 
 	sshconfdir := filepath.Join(user.HomeDir, ".ssh")
-
-	// Maybe we should check that identitiesonly yes is present too to
-	// avoid problems with the ssh agent?
-	if !strings.Contains(conf, "pubkeyauthentication yes") ||
-		!strings.Contains(conf, "passwordauthentication no") ||
-		!strings.Contains(conf, "port 1966") {
-
-		fmt.Fprintf(os.Stderr, `This is the first time you are using capsules.
-Add the following to your ~/.ssh/config to enable capsule access:
-
-IdentitiesOnly yes
+	sshconffile := filepath.Join(sshconfdir, "config")
+	sshconfcontent := `IdentitiesOnly yes
 
 Match user capsule
   PubkeyAuthentication yes
@@ -43,9 +35,36 @@ Match user capsule
   PreferredAuthentications publickey
   Port 1966
   Include ~/.ssh/*_cap_config
-`)
+`
 
-		return fmt.Errorf("Capsule access has not been configured in ~/.ssh/config Please set it up first before using this comand")
+	// Maybe we should check that identitiesonly yes is present too to
+	// avoid problems with the ssh agent?
+	if !strings.Contains(conf, "pubkeyauthentication yes") ||
+		!strings.Contains(conf, "passwordauthentication no") ||
+		!strings.Contains(conf, "port 1966") {
+
+		// Special case where there is no user SSH configuration
+		if _, err := os.Stat(sshconfdir); os.IsNotExist(err) {
+			if err := os.MkdirAll(sshconfdir, 0700); err != nil {
+				return fmt.Errorf("%s", err)
+			}
+
+			scf, err := os.Create(sshconffile)
+			if err != nil {
+				return fmt.Errorf("%s", err)
+			}
+			writer := bufio.NewWriter(scf)
+			writer.WriteString(sshconfcontent)
+			writer.Flush()
+			scf.Close()
+		} else {
+			fmt.Fprintf(os.Stderr, `This is the first time you are using capsules.
+Add the following to your ~/.ssh/config to enable capsule access:
+
+%s`, sshconfcontent)
+
+			return fmt.Errorf("Capsule access has not been configured in ~/.ssh/config Please set it up first before using this comand")
+		}
 	}
 
 	if !strings.Contains(conf, fmt.Sprintf("HOST=%s", hostname)) {
@@ -80,7 +99,7 @@ Match user capsule
 	}
 
 	// We don't yet have the host key for this host, so let's add it to the known hosts
-	if checkkeycmd.ProcessState.ExitCode() == 1 {
+	if checkkeycmd.ProcessState.ExitCode() != 0 {
 		cmd := exec.Command("ssh-keyscan", "-p", "1966", hostname)
 		hk, err := cmd.Output()
 		if err != nil {
