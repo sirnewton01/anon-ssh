@@ -55,6 +55,10 @@ Graphical applications, such as browsers could exist someday and would
 work as seemlessly as web browsers do today. Perhaps they would have some
 graphical capabilities for managing your SSH identities.
 
+If you want to give this a try you can use the
+[Docker Quick Start Guide](docker_quick_start.md) to set up a simple capsule
+and connect to it.
+
 **What's the current state of SSH?**
 
 When accessing an SSH service a user identifier must be provided and generally
