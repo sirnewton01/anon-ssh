@@ -75,6 +75,44 @@ func (h handler) Handle(req gemini.Request) gemini.Response {
 	return resp
 }
 
+func responseHandler(resp gemini.Response) {
+	if resp.Status > 19 && resp.Status < 30 {
+		if !CLI.Quiet {
+			fe := ""
+			if resp.Meta == "text/gemini" {
+				fe = ".gmi"
+			} else if resp.Meta == "application/octet-stream" {
+				fe = ""
+			} else {
+				exts, err := mime.ExtensionsByType(resp.Meta)
+				if err == nil && exts != nil && len(exts) > 0 {
+					fe = ""
+					for i, ext := range exts {
+						fe = fe + ext
+						if i < len(exts)-1 {
+							fe = fe + " "
+						}
+					}
+				}
+			}
+			if fe != "" {
+				fmt.Fprintf(os.Stderr, "%s\r\n", fe)
+			}
+		}
+		if resp.Body != nil {
+			defer resp.Body.Close()
+
+			if _, err := io.Copy(os.Stdout, resp.Body); err != nil {
+				panic(err)
+			}
+		}
+	} else {
+		fmt.Fprintf(os.Stderr, "%s\r\n", resp.Meta)
+		os.Exit(resp.Status)
+	}
+
+}
+
 func main() {
 	kong.Parse(&CLI)
 
@@ -159,13 +197,8 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		fmt.Fprintf(os.Stderr, "%d %s\r\n", resp.Status, resp.Meta)
-		if resp.Body != nil {
-			defer resp.Body.Close()
-			if _, err := io.Copy(os.Stdout, resp.Body); err != nil {
-				panic(err)
-			}
-		}
+
+		responseHandler(resp)
 	} else if len(ps) > 1 && strings.Contains(ps[0], ":") {
 		// SSH style addresses
 		userhost := ps[0]
@@ -186,48 +219,53 @@ func main() {
 			path = "/"
 		}
 
-                // We do some special setup for capsule access, otherwise,
-                //  we just use the usual configuration
-                if username == "capsule" {
-                        err := setup.AssertCapsuleConfig(host)
-                        if err != nil {
-                                panic(err)
-                        }
-                }
+		// We do some special setup for capsule access, otherwise,
+		//  we just use the usual configuration
+		if username == "capsule" {
+			err := setup.AssertCapsuleConfig(host)
+			if err != nil {
+				panic(err)
+			}
+		}
 
-                // TODO more sanitization of the path in addition to the server sanitization
+		// TODO more sanitization of the path in addition to the server sanitization
 
-                cmd := exec.Command("ssh", fmt.Sprintf("%s@%s", username, host), "gemini", path)
+		var cmd *exec.Cmd
+		if !CLI.Quiet {
+			cmd = exec.Command("ssh", fmt.Sprintf("%s@%s", username, host), "gemini", path)
+		} else {
+			cmd = exec.Command("ssh", fmt.Sprintf("%s@%s", username, host), "gemini", "-q", path)
+		}
 
-                stdout, err := cmd.StdoutPipe()
-                if err != nil {
-                        panic(err)
-                }
-                stderr, err := cmd.StderrPipe()
-                if err != nil {
-                        panic(err)
-                }
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			panic(err)
+		}
+		stderr, err := cmd.StderrPipe()
+		if err != nil {
+			panic(err)
+		}
 
-                if err := cmd.Start(); err != nil {
-                        panic(err)
-                }
+		if err := cmd.Start(); err != nil {
+			panic(err)
+		}
 
-                go func() {
-                        defer stdout.Close()
-                        io.Copy(os.Stdout, stdout)
-                }()
-                go func() {
-                        defer stderr.Close()
-                        io.Copy(os.Stderr, stderr)
-                }()
+		go func() {
+			defer stdout.Close()
+			io.Copy(os.Stdout, stdout)
+		}()
+		go func() {
+			defer stderr.Close()
+			io.Copy(os.Stderr, stderr)
+		}()
 
-                if err := cmd.Wait(); err != nil {
-                        if _, ok := err.(*exec.ExitError); !ok {
-                                panic(err)
-                        }
-                }
+		if err := cmd.Wait(); err != nil {
+			if _, ok := err.(*exec.ExitError); !ok {
+				panic(err)
+			}
+		}
 
-                os.Exit(cmd.ProcessState.ExitCode())
+		os.Exit(cmd.ProcessState.ExitCode())
 	} else if err == nil && u.Scheme != "" {
 		fmt.Printf("Only gemcap:// and gemini:// URL schemes are supported\n")
 		os.Exit(127)
@@ -235,18 +273,6 @@ func main() {
 		req := gemini.Request{}
 		h := handler{p}
 		resp := h.Handle(req)
-		if !CLI.Quiet {
-		        fmt.Fprintf(os.Stderr, "%d %s\r\n", resp.Status, resp.Meta)
-	        }
-		defer resp.Body.Close()
-
-		 if _, err := io.Copy(os.Stdout, resp.Body); err != nil {
-			panic(err)
-		}
-
-		// Any non-success statuses become the exit code of this process
-		if resp.Status < 20 || resp.Status > 29 {
-			os.Exit(resp.Status)
-		}
+		responseHandler(resp)
 	}
 }
