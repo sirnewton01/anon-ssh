@@ -287,7 +287,22 @@ func main() {
 
 		log.Printf("Executing command: %v\n", cmd)
 		c := exec.Command(cmd[0], cmd[1:]...)
-		c.Dir = capsule
+
+		c.Dir = capsule      // Current working directory is the capsule root
+		c.Env = os.Environ() // Copy the environment of the server 
+
+		// Copy only certain environment variables from client
+		for _, env := range s.Environ() {
+			if strings.HasPrefix(env, "TZ=") ||
+				strings.HasPrefix(env, "LANG=") {
+				c.Env = append(c.Env, env)
+			}
+		}
+
+		// Depending on the command these may be used by that process
+		c.Env = append(c.Env, "HOST=" + host)
+		c.Env = append(c.Env, "IDENT=" + pubkey)
+
 		stdout, err := c.StdoutPipe()
 		if err != nil {
 			log.Printf("ERROR: %s\n", err)
