@@ -33,7 +33,10 @@ const COMMAND_LIST_TEMPLATE = `# The following is a list of commands templates t
 # directory.
 #
 # Read-only commands:
+main
+#ls <path>
 #cat <path>
+#wc -c <path>
 #gemini <path>
 #scp -f <path>
 #git-upload-pack <path>
@@ -47,7 +50,85 @@ const GROUP_TEMPLATE = `# This is a list of public keys and additional groups
 # 
 # Additional commands for a group are listed in a file commands-groupname
 # (eg. commands-admin and commands-site-admin from above example) with the
-# same format as the commands file.
+# same format as the commands file. In these files you can put the commands
+# available only to only those groups.
+`
+
+const MAIN_SCRIPT_TEMPLATE = `#!/bin/bash
+
+#
+# This script is executed whenever someone does a plain ssh transaction
+# to your server.
+#
+# e.g. ssh capsule@server
+#
+# You'll notice that there are a few environment variables that you can get
+# from the user's environment, such as IDENT (their public key), HOST
+# (virtual host name), LANG (preferred language) and TZ (timezone). The
+# remainder of the user's environment is not available and this is done
+# as a measure of safety for things, such as PATH and other things that
+# could be used maliciously. The remainder of the environment is inherited
+# from the environment used to launch the capsule server.
+#
+# You can make some interesting choices here. If you want your capsule to
+# be serving simple static content then you can probably remove much of this
+# script and just have it "cat index.gmi" to produce the main page. From that
+# page you can link to other pages also in the ../content/ directory. You
+# might even enable certain users to edit that content using something like
+# scp, git, or rsync.
+#
+# If you want your capsule to provide a service with more advanced querying,
+# smart persistence among other dynamic capabilities then scripts or even
+# programs like this can be used to provide a fully tailored experience making
+# use of the above environment variables and other information sent to the stdin
+# (standard input) stream to the command. This command called "main" is special
+# in the sense that the server will treat any bare access to ssh with no command
+# at all as the main command here in the capsule's bin directory. It's added like
+# any other command to the allowed list of commands.
+#
+# Commands can accept input data from stdin. That data must be handled very
+# carefully to prevent security bypass or privilege escalation. A recommended
+# practice is to read inputs by lines matching known parameter names, discarding
+# the rest. Also, each parameter should be checked to be of a known type 
+# (boolean, integer, sanitized string, etc.) Here is a very simple example.
+#
+# while read -n 200; do
+# 	if [[ "help" =~ ^$REPLY ]]; then
+#		echo "# $HOST"
+#		echo "The primary script for the capsule."
+#		echo "## parameters:"
+#		echo "* help: Brings this help screen up"
+#		echo "* p1 <number>: Queries until the maximum number of records are reached."
+#		exit 1
+#   elif [[ "p1 " =~ ^$REPLY ]]; then
+#		n=($REPLY)
+#       n=${n[1]}
+#       if [ -n "$n" ] && [ "$n" -eq "$n" ] 2>/dev/null; then
+#         p1=n       # A good number for p1
+#       fi
+#	fi
+# done
+#
+
+echo "# ${HOST:-default}"
+echo "Welcome capsule user!"
+echo
+echo "Some information about yourself:"
+echo
+echo "## IDENT"
+echo "$IDENT"
+if [ -n "$LANG" ]; then
+	echo
+	echo "## LANG"
+	echo "$LANG"
+fi
+if [ -n "$TZ" ]; then
+	echo
+	echo "## TZ"
+	echo "$TZ"
+fi
+echo
+cat index.gmi
 `
 
 // TODO make this much more comprehensive while being safe
@@ -89,6 +170,10 @@ func commandMatch(cmdTemplate []string, cmd []string, capsuleContentPath string)
 }
 
 func validateCommand(cmd []string, capsulePath string, publicKey string) []string {
+	if len(cmd) == 0 {
+		cmd = []string{"main"}
+	}
+
 	cmdFiles := []string{"commands"}
 
 	// Consult the group file if available to see if there are any
@@ -225,6 +310,21 @@ func main() {
 		}
 		gf.WriteString(GROUP_TEMPLATE)
 		gf.Close()
+
+		err = os.Mkdir(filepath.Join(CLI.DefaultCapsule, "bin"), 0700)
+		if err != nil {
+			log.Printf("ERROR: %s\n", err)
+			os.Exit(1)
+		}
+
+		mf, err := os.Create(filepath.Join(CLI.DefaultCapsule, "bin", "main"))
+		if err != nil {
+			log.Printf("ERROR: %s\n", err)
+			os.Exit(1)
+		}
+		mf.WriteString(MAIN_SCRIPT_TEMPLATE)
+		mf.Chmod(0700)
+		mf.Close()
 	}
 
 	server := &ssh.Server{
@@ -244,23 +344,6 @@ func main() {
 			}
 		}
 		pubkey := s.PublicKey().Type() + " " + base64.StdEncoding.EncodeToString(s.PublicKey().Marshal())
-
-		if len(s.Command()) == 0 {
-			io.WriteString(s, fmt.Sprintf("Welcome to %s, user %s\n", host, s.User()))
-			io.WriteString(s, fmt.Sprintf("Your public key is %s\n", pubkey))
-			io.WriteString(s, fmt.Sprintf("Your environment: %v\n", s.Environ()))
-			// Some friendly warnings in case the client seems to be set up incorrectly
-			if s.User() != "capsule" {
-				io.WriteString(s.Stderr(), fmt.Sprintf("WARNING: your username is not configured as 'capsule' for this host. You might want to change your SSH settings to protect against tracking\n"))
-			}
-			if host == "default" {
-				io.WriteString(s.Stderr(), fmt.Sprintf("WARNING: you HOST environment variable is not set to the hostname that you are connecting. You might want to change your SSH settings to send the hostname so that you can take advantage of virtual hosting in the future.\n"))
-
-			}
-			s.Exit(0)
-			log.Printf("Greeting sent\n")
-			return
-		}
 
 		log.Printf("Command requested: %v\n", s.Command())
 
@@ -286,10 +369,16 @@ func main() {
 		}
 
 		log.Printf("Executing command: %v\n", cmd)
+
+		// See if the command exists in the capsule's bin directory first
+		if _, err := os.Stat(filepath.Join(capsule, "bin", cmd[0])); !os.IsNotExist(err) {
+			cmd[0] = filepath.Join(capsule, "bin", cmd[0])
+		}
+
 		c := exec.Command(cmd[0], cmd[1:]...)
 
-		c.Dir = capsule      // Current working directory is the capsule root
-		c.Env = os.Environ() // Copy the environment of the server 
+		c.Dir = filepath.Join(capsule, "content") // Current working directory is the capsule content
+		c.Env = os.Environ()                      // Copy the environment of the server
 
 		// Copy only certain environment variables from client
 		for _, env := range s.Environ() {
@@ -299,9 +388,26 @@ func main() {
 			}
 		}
 
+		// Strip out any terminal variables
+		for ie, e := range c.Env {
+			if strings.HasPrefix(e, "TERM=") {
+				c.Env = append(c.Env[:ie], c.Env[ie+1:]...)
+				break
+			}
+		}
+
 		// Depending on the command these may be used by that process
-		c.Env = append(c.Env, "HOST=" + host)
-		c.Env = append(c.Env, "IDENT=" + pubkey)
+		c.Env = append(c.Env, "HOST="+host)
+		c.Env = append(c.Env, "IDENT="+pubkey)
+
+		// Add the capsule's path to the PATH environment
+		for ipe, pe := range c.Env {
+			if strings.HasPrefix(pe, "PATH=") {
+				pe = "PATH=" + filepath.Join(capsule, "bin") + ":" + pe[5:]
+				c.Env[ipe] = pe
+				break
+			}
+		}
 
 		stdout, err := c.StdoutPipe()
 		if err != nil {
