@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"text/template"
 	"time"
 )
 
@@ -32,9 +33,12 @@ const COMMAND_LIST_TEMPLATE = `# The following is a list of commands templates t
 # Note the special <path> tokens represent paths relative to the capsule content
 # directory.
 #
+# Default command when the user doesn't provide one.
+tpl
+#
 # Read-only commands:
-main
 #ls <path>
+#tpl <path>
 #cat <path>
 #wc -c <path>
 #gemini <path>
@@ -54,81 +58,32 @@ const GROUP_TEMPLATE = `# This is a list of public keys and additional groups
 # available only to only those groups.
 `
 
-const MAIN_SCRIPT_TEMPLATE = `#!/bin/bash
+const MAIN_GMI_TEMPLATE = `# {{ .env.HOST }} (This Capsule)
+Welcome capsule user!
 
-#
-# This script is executed whenever someone does a plain ssh transaction
-# to your server.
-#
-# e.g. ssh capsule@server
-#
-# You'll notice that there are a few environment variables that you can get
-# from the user's environment, such as IDENT (their public key), HOST
-# (virtual host name), LANG (preferred language) and TZ (timezone). The
-# remainder of the user's environment is not available and this is done
-# as a measure of safety for things, such as PATH and other things that
-# could be used maliciously. The remainder of the environment is inherited
-# from the environment used to launch the capsule server.
-#
-# You can make some interesting choices here. If you want your capsule to
-# be serving simple static content then you can probably remove much of this
-# script and just have it "cat index.gmi" to produce the main page. From that
-# page you can link to other pages also in the ../content/ directory. You
-# might even enable certain users to edit that content using something like
-# scp, git, or rsync.
-#
-# If you want your capsule to provide a service with more advanced querying,
-# smart persistence among other dynamic capabilities then scripts or even
-# programs like this can be used to provide a fully tailored experience making
-# use of the above environment variables and other information sent to the stdin
-# (standard input) stream to the command. This command called "main" is special
-# in the sense that the server will treat any bare access to ssh with no command
-# at all as the main command here in the capsule's bin directory. It's added like
-# any other command to the allowed list of commands.
-#
-# Commands can accept input data from stdin. That data must be handled very
-# carefully to prevent security bypass or privilege escalation. A recommended
-# practice is to read inputs by lines matching known parameter names, discarding
-# the rest. Also, each parameter should be checked to be of a known type 
-# (boolean, integer, sanitized string, etc.) Here is a very simple example.
-#
-# while read -n 200; do
-# 	if [[ "help" =~ ^$REPLY ]]; then
-#		echo "# $HOST"
-#		echo "The primary script for the capsule."
-#		echo "## parameters:"
-#		echo "* help: Brings this help screen up"
-#		echo "* p1 <number>: Queries until the maximum number of records are reached."
-#		exit 1
-#   elif [[ "p1 " =~ ^$REPLY ]]; then
-#		n=($REPLY)
-#       n=${n[1]}
-#       if [ -n "$n" ] && [ "$n" -eq "$n" ] 2>/dev/null; then
-#         p1=n       # A good number for p1
-#       fi
-#	fi
-# done
-#
+Some information we can see about yourself:
 
-echo "# ${HOST:-default}"
-echo "Welcome capsule user!"
-echo
-echo "Some information about yourself:"
-echo
-echo "## IDENT"
-echo "$IDENT"
-if [ -n "$LANG" ]; then
-	echo
-	echo "## LANG"
-	echo "$LANG"
-fi
-if [ -n "$TZ" ]; then
-	echo
-	echo "## TZ"
-	echo "$TZ"
-fi
-echo
-cat index.gmi
+## IDENT (Public Encryption Key)
+{{ .env.IDENT }}
+
+{{ if index .env "LANG" }}## LANG (Preferred Language)
+{{ .env.LANG }}{{ end }}
+{{ if index .env "TZ" }}## TZ (Preferred Timezone)
+{{ .env.TZ }}{{ end }}
+If you are the owner of this capsule you can change this welcome page to guide visitors to the capabilities and areas of your capsule. This page is in contents/main.gmi of your capsule directory and can be evaluated using the tpl built-in command.
+
+You can add new files to your capsule to the contents directory, but first you will need to provide a command that will allow them to view your files. If you uncomment the "cat <path>" command in the commands file then users can run that command in your capsule with the file path and see them easily if they are text. This welcome document can be a place where you put a list of files to download.
+
+=> ssh capsule@{{ .env.HOST }} cat about.gmi
+=> ssh capsule@{{ .env.HOST }} cat contacts.gmi
+
+Files that are meant to be downloaded to a visitor's computer can be done using scp. Enable that in the capsule commands file. You can provide examples for them to change and suit their needs.
+
+` + "```\nscp capsule@{{ .env.HOST }}:/site_backup.tar.gz .\n```" + `
+
+Instead of curating a complete list here of all the files that are in your capsule you can provide the ls command. It depends on the nature of your capsule. It's best to start with only the commands that are needed. Once the "ls <path>" command is enabled then visitors can look around the capsule like this:
+
+` + "```\nssh capsule@{{ .env.HOST }} ls /\n```" + `
 `
 
 // TODO make this much more comprehensive while being safe
@@ -170,10 +125,6 @@ func commandMatch(cmdTemplate []string, cmd []string, capsuleContentPath string)
 }
 
 func validateCommand(cmd []string, capsulePath string, publicKey string) []string {
-	if len(cmd) == 0 {
-		cmd = []string{"main"}
-	}
-
 	cmdFiles := []string{"commands"}
 
 	// Consult the group file if available to see if there are any
@@ -215,6 +166,11 @@ func validateCommand(cmd []string, capsulePath string, publicKey string) []strin
 			}
 
 			cmdTemplate := strings.Split(l, " ")
+
+			// No command is provided and this is the default
+			if len(cmdTemplate) == 1 && len(cmd) == 0 {
+				return cmdTemplate
+			}
 
 			if len(cmdTemplate) != len(cmd) {
 				continue
@@ -295,12 +251,12 @@ func main() {
 			os.Exit(1)
 		}
 
-		idxf, err := os.Create(filepath.Join(CLI.DefaultCapsule, "content", "index.gmi"))
+		idxf, err := os.Create(filepath.Join(CLI.DefaultCapsule, "content", "main.gmi"))
 		if err != nil {
 			log.Printf("ERROR: %s\n", err)
 			os.Exit(1)
 		}
-		idxf.WriteString("Welcome to my capsule!\n")
+		idxf.WriteString(MAIN_GMI_TEMPLATE)
 		idxf.Close()
 
 		gf, err := os.Create(filepath.Join(CLI.DefaultCapsule, "group"))
@@ -316,15 +272,6 @@ func main() {
 			log.Printf("ERROR: %s\n", err)
 			os.Exit(1)
 		}
-
-		mf, err := os.Create(filepath.Join(CLI.DefaultCapsule, "bin", "main"))
-		if err != nil {
-			log.Printf("ERROR: %s\n", err)
-			os.Exit(1)
-		}
-		mf.WriteString(MAIN_SCRIPT_TEMPLATE)
-		mf.Chmod(0700)
-		mf.Close()
 	}
 
 	server := &ssh.Server{
@@ -373,6 +320,52 @@ func main() {
 		// See if the command exists in the capsule's bin directory first
 		if _, err := os.Stat(filepath.Join(capsule, "bin", cmd[0])); !os.IsNotExist(err) {
 			cmd[0] = filepath.Join(capsule, "bin", cmd[0])
+		}
+
+		// This command is usingo the built-in template processor
+		//
+		// Usage:
+		// tpl [<path>]
+		//
+		if cmd[0] == "tpl" {
+			fp := "main.gmi"
+
+			if len(cmd) == 2 {
+				fp = cmd[1]
+			}
+
+			tmpl, err := template.ParseFiles(filepath.Join(capsule, "content", fp))
+			if err != nil {
+				log.Printf("Error parsing template %s: %s\n", fp, err)
+				io.WriteString(s, "Command not found\n")
+				s.Exit(127)
+				return
+			}
+
+			envdata := map[string]interface{}{
+				"HOST":  host,
+				"IDENT": pubkey,
+			}
+			data := map[string]interface{}{"env": envdata}
+
+			// Copy only certain environment variables from client
+			for _, env := range s.Environ() {
+				if strings.HasPrefix(env, "TZ=") {
+					envdata["TZ"] = env[3:]
+				} else if strings.HasPrefix(env, "LANG=") {
+					envdata["LANG"] = env[5:]
+				}
+			}
+
+			err = tmpl.Execute(s, data)
+			if err != nil {
+				log.Printf("Error executing template %s: %s\n", fp, err)
+				io.WriteString(s, "Command not found\n")
+				s.Exit(127)
+				return
+			}
+			s.Exit(0)
+			return
 		}
 
 		c := exec.Command(cmd[0], cmd[1:]...)
